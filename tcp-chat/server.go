@@ -4,9 +4,9 @@ import (
 	"bufio"
 	"fmt"
 	"net"
-	"os"
 	"strings"
 	"sync"
+	"time"
 )
 
 var (
@@ -26,7 +26,6 @@ func main() {
 	go handleBroadcast()
 
 	fmt.Println("TCP server started on :9000")
-
 	for {
 		conn, err := listener.Accept()
 		if err != nil {
@@ -39,15 +38,19 @@ func main() {
 func handleConnection(conn net.Conn) {
 	defer conn.Close()
 
+	start := time.Now()
 	conn.Write([]byte("Enter your name: "))
 	nameBuf, _ := bufio.NewReader(conn).ReadString('\n')
+	latency := time.Since(start)
+	fmt.Printf("Latency for %s: %v\n", conn.RemoteAddr(), latency)
+
 	name := strings.TrimSpace(nameBuf)
 
 	mutex.Lock()
 	clients[conn] = name
 	mutex.Unlock()
 
-	broadcast <- fmt.Sprintf("%s joined the chat", name)
+	broadcast <- fmt.Sprintf("%s joined the chat\n", name)
 
 	for {
 		msg, err := bufio.NewReader(conn).ReadString('\n')
@@ -61,15 +64,17 @@ func handleConnection(conn net.Conn) {
 	delete(clients, conn)
 	mutex.Unlock()
 
-	broadcast <- fmt.Sprintf("%s left the chat", name)
+	broadcast <- fmt.Sprintf("%s left the chat\n", name)
 }
 
 func handleBroadcast() {
-	for {
-		msg := <-broadcast
+	for msg := range broadcast {
 		mutex.Lock()
 		for client := range clients {
-			client.Write([]byte(msg))
+			_, err := client.Write([]byte(msg))
+			if err != nil {
+				fmt.Printf("Error sending to %s: %v\n", clients[client], err)
+			}
 		}
 		mutex.Unlock()
 	}
