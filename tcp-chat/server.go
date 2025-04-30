@@ -6,29 +6,24 @@ import (
 	"net"
 	"strings"
 	"sync"
-	"time"
 )
 
-var (
-	clients   = make(map[net.Conn]string)
-	mutex     = &sync.Mutex{}
-	broadcast = make(chan string)
-)
+var clients sync.Map
 
 func main() {
-	listener, err := net.Listen("tcp", ":9000")
+	ln, err := net.Listen("tcp", ":9000")
 	if err != nil {
-		fmt.Println("Error:", err)
+		fmt.Println("Error starting server:", err)
 		return
 	}
-	defer listener.Close()
-
-	go handleBroadcast()
+	defer ln.Close()
 
 	fmt.Println("TCP server started on :9000")
+
 	for {
-		conn, err := listener.Accept()
+		conn, err := ln.Accept()
 		if err != nil {
+			fmt.Println("Connection error:", err)
 			continue
 		}
 		go handleConnection(conn)
@@ -38,44 +33,38 @@ func main() {
 func handleConnection(conn net.Conn) {
 	defer conn.Close()
 
-	start := time.Now()
-	conn.Write([]byte("Enter your name: "))
-	nameBuf, _ := bufio.NewReader(conn).ReadString('\n')
-	latency := time.Since(start)
-	fmt.Printf("Latency for %s: %v\n", conn.RemoteAddr(), latency)
+	conn.Write([]byte("Enter your name: \n")) // Prompt client for name
 
-	name := strings.TrimSpace(nameBuf)
+	reader := bufio.NewReader(conn)
+	name, err := reader.ReadString('\n')
+	if err != nil {
+		fmt.Println("Failed to read name:", err)
+		return
+	}
+	name = strings.TrimSpace(name)
+	clients.Store(conn, name)
+	fmt.Printf("👤 %s joined the chat\n", name)
 
-	mutex.Lock()
-	clients[conn] = name
-	mutex.Unlock()
-
-	broadcast <- fmt.Sprintf("%s joined the chat\n", name)
+	broadcast(fmt.Sprintf("!!! %s joined the chat !!!\n", name), conn)
 
 	for {
-		msg, err := bufio.NewReader(conn).ReadString('\n')
+		message, err := reader.ReadString('\n')
 		if err != nil {
-			break
+			fmt.Printf("!!! %s disconnected !!!\n", name)
+			clients.Delete(conn)
+			broadcast(fmt.Sprintf("!!! %s left the chat !!!\n", name), conn)
+			return
 		}
-		broadcast <- fmt.Sprintf("%s: %s", name, msg)
+		broadcast(fmt.Sprintf("%s: %s", name, message), conn)
 	}
-
-	mutex.Lock()
-	delete(clients, conn)
-	mutex.Unlock()
-
-	broadcast <- fmt.Sprintf("%s left the chat\n", name)
 }
 
-func handleBroadcast() {
-	for msg := range broadcast {
-		mutex.Lock()
-		for client := range clients {
-			_, err := client.Write([]byte(msg))
-			if err != nil {
-				fmt.Printf("Error sending to %s: %v\n", clients[client], err)
-			}
+func broadcast(message string, sender net.Conn) {
+	clients.Range(func(key, value interface{}) bool {
+		conn := key.(net.Conn)
+		if conn != sender {
+			conn.Write([]byte(message))
 		}
-		mutex.Unlock()
-	}
+		return true
+	})
 }
