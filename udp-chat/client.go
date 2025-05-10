@@ -13,7 +13,6 @@ func logClientMetrics(startTime time.Time) {
 	var memStats runtime.MemStats
 	for {
 		time.Sleep(5 * time.Second)
-
 		runtime.ReadMemStats(&memStats)
 		elapsed := time.Since(startTime).Seconds()
 
@@ -38,19 +37,22 @@ func main() {
 	start := time.Now()
 	go logClientMetrics(start)
 
-	// Receive messages
+	reader := bufio.NewReader(os.Stdin)
+
+	fmt.Print("Enter your name: ")
+	name, _ := reader.ReadString('\n')
+	conn.Write([]byte(name))
+
 	go func() {
-		buffer := make([]byte, 1024)
+		buf := make([]byte, 1024)
 		for {
-			n, _, err := conn.ReadFromUDP(buffer)
+			n, _, err := conn.ReadFromUDP(buf)
 			if err == nil {
-				fmt.Print(string(buffer[:n]))
+				fmt.Print(string(buf[:n]))
 			}
 		}
 	}()
 
-	// Send messages
-	reader := bufio.NewReader(os.Stdin)
 	for {
 		text, _ := reader.ReadString('\n')
 		startSend := time.Now()
