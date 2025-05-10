@@ -5,7 +5,6 @@ import (
 	"expvar"
 	"fmt"
 	"net"
-	"os"
 	"runtime"
 	"strings"
 	"sync"
@@ -13,13 +12,12 @@ import (
 )
 
 var (
-	clients   = make(map[net.Conn]string)
-	mutex     = &sync.Mutex{}
-	broadcast = make(chan string)
-
-	totalMessages = expvar.NewInt("totalMessages")
-	totalClients  = expvar.NewInt("totalClients")
-	startTime     = time.Now()
+	clients        = make(map[net.Conn]string)
+	mutex          = &sync.Mutex{}
+	broadcast      = make(chan string)
+	totalMessages  = expvar.NewInt("totalMessages")
+	totalClients   = expvar.NewInt("totalClients")
+	startTime      = time.Now()
 )
 
 func logMetrics() {
@@ -51,7 +49,7 @@ func main() {
 	go logMetrics()
 	go handleBroadcast()
 
-	fmt.Println(" TCP server started on :9000")
+	fmt.Println("✅ TCP server started on :9000")
 
 	for {
 		conn, err := listener.Accept()
@@ -65,8 +63,14 @@ func main() {
 func handleConnection(conn net.Conn) {
 	defer conn.Close()
 
-	conn.Write([]byte("Enter your name: "))
-	nameBuf, _ := bufio.NewReader(conn).ReadString('\n')
+	// ✅ Fix: ensure newline so client can read the prompt correctly
+	conn.Write([]byte("Enter your name:\n"))
+
+	nameBuf, err := bufio.NewReader(conn).ReadString('\n')
+	if err != nil {
+		fmt.Println("Failed to read name:", err)
+		return
+	}
 	name := strings.TrimSpace(nameBuf)
 
 	mutex.Lock()
